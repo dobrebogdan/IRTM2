@@ -1,0 +1,4 @@
+1) trebuie mai multi algoritmi de invatare incercati
+2) trebuie incercata orice abordare: cuvinetlele relevante, markeri stilistici din stop words, rima, ritm etc.
+3) trebuie cross validare
+4) cantecele pot fi in mai multe limbi, inclusiv mai multe limbi in acelasi cantec
