@@ -35,9 +35,6 @@ def clean_sentence(sentence):
 
 
 batch_size = 32
-imag_height = 128
-imag_width = 55
-training_directory = './train'
 classes_number = 10
 epochs_number = 15
 splits_number = 5
@@ -54,6 +51,8 @@ labels_to_class = {
     'Country': 8,
     'Folk': 9
 }
+
+# Reading the training and testing data
 
 train_examples = []
 train_labels = []
@@ -147,5 +146,5 @@ def n_fold_cross_validation():
             writer.writerow(str(accuracy))
 
 
-#train_and_predict()
+train_and_predict()
 n_fold_cross_validation()
