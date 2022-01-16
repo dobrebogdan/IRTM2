@@ -1,3 +1,4 @@
+# tf idf and neural networks, model accuracy = 0.32-0.34
 # Importing libraries
 import csv
 import numpy as np
@@ -7,6 +8,8 @@ from sklearn.metrics import f1_score, accuracy_score
 import tensorflow as tf
 import tensorflow_hub as hub
 from matplotlib import pyplot as plt
+from sklearn.model_selection import KFold
+from sklearn.metrics import confusion_matrix
 
 
 lemmatizer = WordNetLemmatizer()
@@ -73,8 +76,8 @@ print(set(test_labels))
 train_dataset = tf.data.Dataset.from_tensor_slices((train_examples, train_labels))
 
 
-def get_model():
-    train_dataset = tf.data.Dataset.from_tensor_slices((train_examples, train_labels))
+def get_model(curr_train_examples, curr_train_labels):
+    train_dataset = tf.data.Dataset.from_tensor_slices((curr_train_examples, curr_train_labels))
 
 
     BUFFER_SIZE = 10000
@@ -83,13 +86,10 @@ def get_model():
     train_dataset = train_dataset.shuffle(BUFFER_SIZE).batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
 
     VOCAB_SIZE = 1000
-    encoder = tf.keras.layers.TextVectorization(max_tokens=VOCAB_SIZE, output_mode="int")
+    encoder = tf.keras.layers.TextVectorization(max_tokens=VOCAB_SIZE, output_mode="tf-idf")
     encoder.adapt(train_dataset.map(lambda text, label: text))
-    hub_layer = hub.KerasLayer("https://tfhub.dev/google/universal-sentence-encoder/4", input_shape=[],
-                               output_shape=[512, 16],
-                               dtype=tf.string, trainable=True)
     model = tf.keras.models.Sequential([
-        hub_layer,
+        encoder,
         tf.keras.layers.Dense(128, activation='relu'),
         tf.keras.layers.Dense(64, activation='relu'),
         tf.keras.layers.Dense(classes_number)
@@ -102,10 +102,38 @@ def get_model():
 train_examples = np.array(train_examples)
 train_labels = np.array(train_labels).astype('float32')
 
-model = get_model()
-history = model.fit(train_examples, train_labels, batch_size=64, epochs=10)
+def train_and_predict():
+    model = get_model(train_examples, train_labels)
+    model.fit(train_examples, train_labels, batch_size=64, epochs=20)
 
-predicted_labels = model.predict(test_examples)
-predicted_labels = [predicted_label.argmax() for predicted_label in predicted_labels]
-print(f'Accuracy score for validation is {accuracy_score(test_labels, predicted_labels)}')
-print(f'F1 score for validation is {f1_score(test_labels, predicted_labels, labels=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])}')
+    predicted_labels = model.predict(test_examples)
+    predicted_labels = [predicted_label.argmax() for predicted_label in predicted_labels]
+    print(f'Accuracy score for validation is {accuracy_score(test_labels, predicted_labels)}')
+    print(confusion_matrix(test_labels, predicted_labels))
+
+def n_fold_cross_validation():
+    # Using KFold to split in 5 parts for cross validation
+    kfold = KFold(n_splits=splits_number, shuffle=True)
+    kfold_split = kfold.split(train_examples, train_labels)
+    step = 0
+    accuracies = []
+    # iterating through the different splits
+    for curr_train, curr_test in kfold_split:
+        step += 1
+        model = get_model(train_examples[curr_train], train_labels[curr_train])
+        # training the model
+        model.fit(train_examples[curr_train], train_labels[curr_train], batch_size=batch_size, epochs=epochs_number)
+        # getting the evaluation results
+        results = model.evaluate(train_examples[curr_test], train_labels[curr_test])
+        # printing the loss and accuracy
+        print(f'Step {step}: Loss - {results[0]}, Accuracy - {results[1]}')
+        accuracies.append(results[1])
+    # writing the results to an output file
+    with open('results.csv', 'w') as file:
+        writer = csv.writer(file, delimiter=',')
+        for accuracy in accuracies:
+            writer.writerow(str(accuracy))
+
+
+# train_and_predict()
+n_fold_cross_validation()
