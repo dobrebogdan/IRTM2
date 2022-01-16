@@ -1,12 +1,15 @@
-# tf hub layer and neural networks, model accuracy = 0.39-0.41
+# word2vec and xgboost, model accuracy = 0.28-0.30
 # Importing libraries
 import csv
+
+import gensim
 import numpy as np
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import f1_score, accuracy_score
 import tensorflow as tf
-import tensorflow_hub as hub
+import xgboost as xgb
 from matplotlib import pyplot as plt
 from sklearn.model_selection import KFold
 from sklearn.metrics import confusion_matrix
@@ -77,31 +80,41 @@ train_dataset = tf.data.Dataset.from_tensor_slices((train_examples, train_labels
 
 
 def get_model():
+    xgb_classifier = xgb.XGBClassifier()
 
-    hub_layer = hub.KerasLayer("https://tfhub.dev/google/universal-sentence-encoder/4", input_shape=[],
-                               output_shape=[512, 16],
-                               dtype=tf.string, trainable=True)
-
-    model = tf.keras.models.Sequential([
-        hub_layer,
-        tf.keras.layers.Dense(128, activation='relu'),
-        tf.keras.layers.Dense(64, activation='relu'),
-        tf.keras.layers.Dense(classes_number)
-    ])
-    model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-                  optimizer='adam',
-                  metrics=['accuracy'])
-    return model
+    return xgb_classifier
 
 train_examples = np.array(train_examples)
 train_labels = np.array(train_labels).astype('float32')
 
-def train_and_predict():
-    model = get_model(train_examples, train_labels)
-    model.fit(train_examples, train_labels, batch_size=64, epochs=20)
+def get_embedding(sentence, word2vec):
+    sum = None
+    num = 0
+    for word in sentence:
+        if sum is None:
+            try:
+                sum = word2vec.wv[word]
+                num = 1
+            except:
+                pass
+        else:
+            try:
+                sum = sum + word2vec.wv[word]
+                num += 1
+            except:
+                pass
+    sum = sum / float(num)
+    return sum
 
-    predicted_labels = model.predict(test_examples)
-    predicted_labels = [predicted_label.argmax() for predicted_label in predicted_labels]
+
+def train_and_predict():
+    model = get_model()
+    word2vec = gensim.models.Word2Vec(train_examples, min_count=1, window=5, sg=0)
+    vectorized_train_examples = [get_embedding(train_example, word2vec) for train_example in train_examples]
+    model.fit(vectorized_train_examples, train_labels)
+
+    vectorized_test_examples = [get_embedding(test_example, word2vec) for test_example in test_examples]
+    predicted_labels = model.predict(vectorized_test_examples)
     print(f'Accuracy score for validation is {accuracy_score(test_labels, predicted_labels)}')
     print(confusion_matrix(test_labels, predicted_labels))
 
@@ -114,14 +127,19 @@ def n_fold_cross_validation():
     # iterating through the different splits
     for curr_train, curr_test in kfold_split:
         step += 1
-        model = get_model(train_examples[curr_train], train_labels[curr_train])
+        model = get_model()
+        word2vec = gensim.models.Word2Vec(train_examples[curr_train], min_count=1, window=5, sg=0)
+        vectorized_train_examples = [get_embedding(train_example, word2vec) for train_example in train_examples[curr_train]]
         # training the model
-        model.fit(train_examples[curr_train], train_labels[curr_train], batch_size=batch_size, epochs=epochs_number)
+        model.fit(vectorized_train_examples, train_labels[curr_train])
+
         # getting the evaluation results
-        results = model.evaluate(train_examples[curr_test], train_labels[curr_test])
+        vectorized_test_examples = [get_embedding(train_example, word2vec) for train_example in train_examples[curr_test]]
+        predicted_labels = model.predict(vectorized_test_examples)
         # printing the loss and accuracy
-        print(f'Step {step}: Loss - {results[0]}, Accuracy - {results[1]}')
-        accuracies.append(results[1])
+        accuracy = accuracy_score(train_labels[curr_test], predicted_labels)
+        print(f'Step {step}: Accuracy - {accuracy}')
+        accuracies.append(accuracy)
     # writing the results to an output file
     with open('results.csv', 'w') as file:
         writer = csv.writer(file, delimiter=',')
@@ -129,5 +147,5 @@ def n_fold_cross_validation():
             writer.writerow(str(accuracy))
 
 
-# train_and_predict()
+#train_and_predict()
 n_fold_cross_validation()
